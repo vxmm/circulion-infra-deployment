@@ -2,7 +2,7 @@ name: Infrastructure Release
 
 on:
   push:
-    branches: [ "master" ]
+    branches: [ "main" ]
     paths-ignore:
       - 'cl-lambda-processor-2.py'
   pull_request:
