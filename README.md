@@ -2,6 +2,8 @@
 
 This is a novel implementation of a Lambda function which transfers data between two S3 buckets for the second assignment. 
 
+For details on the code repository for the main assignment, see my [other project](https://github.com/vxmm/circulion-code-deployment). 
+
 ## Lambda + S3 
 
 The .tfstate is managed in S3 in accordance with best practices - if needed, we can implement [DyanmoDB or S3 state locking](https://developer.hashicorp.com/terraform/language/backend/s3) in order to ensure no conflicts occur on when the state file is being modified by several developers at the same time. 
