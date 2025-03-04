@@ -1,0 +1,93 @@
+name: Infrastructure Release
+
+on:
+  push:
+    branches: [ "master" ]
+    paths-ignore:
+      - 'cl-lambda-processor-2.py'
+  pull_request:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  TF_LOG: INFO
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+
+jobs:
+  terraform:
+    name: 'Terraform'
+    runs-on: ubuntu-latest
+    environment: production
+
+    defaults:
+      run:
+        shell: bash
+    steps:
+
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Validate region variable deployment
+      run:  |
+        var_region_1=$(grep "region" ./variables.tf | awk '{print $3}')
+        var_region_2=$(grep "region" ./iam/variables.tf | awk '{print $3}')
+        if [[ "$var_region_1" != "$var_region_2" ]]; then
+          echo "Please ensure the region variable in each module is identical."
+          exit 1
+        fi
+
+        echo "Region variables matching"
+
+    - name: Validate bucket name deployment
+      run:  |
+        var1_input_bucket=$(grep 'variable "input_bucket"' -A 2 ./variables.tf | grep 'default' | awk -F '=' '{print $2}' | tr -d ' "')
+        current_region=$(grep 'variable "region"' -A 2 ./variables.tf | grep 'default' | awk -F '=' '{print $2}' | tr -d ' "')
+
+        expected_bucket_name="cl-recipe-bucket-v2-${current_region}"
+
+        echo "Extracted input_bucket: $var1_input_bucket"
+        echo "Current region: $current_region"
+        echo "Expected bucket name: $expected_bucket_name"
+
+
+        if [[ "$var1_input_bucket" != "cl-recipe-bucket-v2" ]]; then
+          echo "The input bucket name in the variables.tf does not match 'cl-recipe-bucket-v2'."
+          exit 1
+        fi
+
+
+        if [[ "$expected_bucket_name" != "cl-recipe-bucket-v2-${current_region}" ]]; then
+          echo "Bucket name mismatch: expected 'cl-recipe-bucket-v2-${current_region}', got '$expected_bucket_name'."
+          exit 1
+        fi
+
+        echo "Bucket names are valid and matching."
+
+    - name: Configure AWS credentials from AWS account
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+          role-to-assume: ${{ secrets.AWS_ROLE }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-session-name: GitHub-OIDC-TERRAFORM
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v2
+
+    - name: Terraform Init
+      env:
+          AWS_BUCKET_NAME: ${{ secrets.AWS_BUCKET_NAME }}
+          AWS_BUCKET_KEY_NAME: ${{ secrets.AWS_BUCKET_KEY_NAME }}
+      run: terraform init -backend-config="bucket=${AWS_BUCKET_NAME}" -backend-config="key=${AWS_BUCKET_KEY_NAME}" -backend-config="region=${AWS_REGION}"
+
+    - name: Terraform Plan
+      run: terraform plan -input=false
+
+    - name: Terraform Plan Status
+      if: steps.plan.outcome == 'failure'
+      run: exit 1
+    
+    - name: Terraform Apply
+      if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+      run: terraform apply -auto-approve -input=false
